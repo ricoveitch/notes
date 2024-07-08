@@ -59,12 +59,48 @@ https://www.youtube.com/watch?v=H9bfqozjoqs (good explanation)
 
 ## Graphs
 
+https://leetcode.com/problems/number-of-islands/
+
 ### DFS
 
-stack.pop()
+Using a stack, push to front when can keep going, and stack.pop() when can't
+
+```
+def dfs_recursive(row, col):
+    if !inbounds(row, col):
+        return
+
+    if visited[row][col]:
+        return
+
+    for edge in curr:
+        dfs_recursive(edge[0], edge[1])
+```
+
+```
+def dfs(row, col):
+    stack = [start]
+    while stack.len:
+        curr = stack.pop()
+        if visited:
+            continue
+
+        for edge in curr:
+            stack.push(edge)
+
+```
 
 ### BFS
 
-stack.remove(0)
+```
+queue = [edge]
+while queue:
+    curr = queue.popLeft()
+    for edge in curr:
+        if !visited(edge):
+            queue.push(edge)
+```
+
+queue.remove(0)
 
 ## Two sum

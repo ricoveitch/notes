@@ -255,7 +255,7 @@ But how much larger? How should the RTT be estimated in the first place? Should 
 
 ### Estimating the Round-Trip Time
 
-TCP estimates the round-trip time by taking one RTT measurement (called `SampleRTT`) at time for an unacknowledged segment that has not been retransmitted. So a a new value of `SampleRTT` approximately once every RTT.
+TCP estimates the round-trip time by taking one RTT measurement (called `SampleRTT`) at time for an unacknowledged segment that has not been retransmitted. So a new value of `SampleRTT` approximately once every RTT.
 
 Because you could get significant fluctuations between sample to sample, TCP maintains an average `EstimatedRTT` of the `SampleRTT` values. After every new `SampleRTT`, `EstimatedRTT` gets updated to:
 
@@ -340,6 +340,8 @@ When the TCP sender receives 3 duplicate ACKs it can tell the second sequence pr
 
 Remember receiver uses incremental ACKs so when sender re-sends seq=100, receiver has the others buffered and will end up sending an ACK of 141. So sender doesnt need to retransmits the others.
 
+<img src="3-images/fast-retransmission.png" width="400">
+
 ### Go-Back-N or Selective Repeat?
 
 TCP is closer to GBN. But TCP will re-transmit at most one packet at a time.
@@ -352,7 +354,9 @@ Note: a TCP sender can also be throttled due to congestion within the IP network
 
 In `flow control` the sender maintain a variable called the `receive window`, which gives an indication of how much free buffer space is available at the receiver.
 
-Let `LastByteRead` = last byte read by receiving application, `LastByteRcvd` = last byte received in buffer, `RcvBuffer` = buffer size, `rwnd` = bytes left in buffer.
+Let `LastByteRead` = last byte read by receiving application, `LastByteRcvd` = last byte received in buffer, `RcvBuffer` = buffer size, `rwnd` = (receive window) the spare room in buffer.
+
+`rwnd = RcvBuffer – (LastByteRcvd – LastByteRead)`
 
 If A is sending to B, B puts the current value of `rwnd` is placed in the `receive window field` of every segment it sends to A.
 
@@ -411,3 +415,231 @@ An effective defense known as `SYN cookies` [RFC 4987] are now deployed in most 
 Without SYN cookies, the server must maintain some state information even before receiving the ACK. This state includes the client's information and the sequence numbers for the TCP connection. It uses this info to validate the ACK. This partial state still consumes memory and processing power, which can be exploited in a SYN flood attack to exhaust the server's resources.
 
 # 3.6 Principles of Congestion Control
+
+To treat the cause of network congestion, mechanisms are needed to throttle senders in the face of network congestion.
+
+This section looks at treating congestion generally.
+
+## 3.6.1 The Causes and the Costs of Congestion
+
+### Scenario 1: Two Senders, a Router with Infinite Buffers
+
+If you have Router Capacity R: The router has a maximum capacity R, meaning it can handle up to RR bits per second (bps).
+
+Let `∆` be the rate at which the application sends original data into the socket.
+
+Take the example of transmitting a packer from host A to B, where both host have the same sending and receiving rates.
+
+The link simply cannot deliver packets to a receiver at a steady-state rate that exceeds R/2. No matter how high Hosts A and B set their sending rates, they will each never see a throughput higher than R/2 because they share this capacity.
+
+When the sending rate exceeds R/2, the average number of queued packets in the router is unbounded, and the average delay between source and destination becomes infinite.
+
+`∆` into router will equal `∆` going out until `∆` equals R/2 then it caps.
+
+So even though in terms of throughput its better to have it as high as possible, from a delay perspective its not. A first problem of congestion: `Large queuing delays are experienced as the packet-arrival rate nears the link capacity`
+
+### Scenario 2: Two Senders and a Router with Finite Buffers
+
+Let `∆'` be the rate at which the application sends `original` data into the socket.
+
+Also channel is reliable. The average host sending rate cannot exceed R/2 under this scenario. So `∆'in == ∆out` until equal to R/2.
+
+If the channel is unreliable then `∆'in < ∆out`
+
+Another cost of a `congested` network is the sender needing to `retransmit` packets that were dropped or timed out.
+
+### Scenario 3: Four Senders, Routers with Finite Buffers, and Multihop Paths
+
+Same as 2 but with four hosts transmitting packets, each over overlapping two-hop path.
+
+Another cost of dropping a packet due to congestion is when a packet is dropped along a path, the transmission capacity that was used at each of the upstream links to forward that packet to the point at which it is dropped ends up having been wasted.
+
+## 3.6.2 Approaches to Congestion Control
+
+Two broad approaches to congestion control.
+
+### End-to-end congestion control
+
+The network layer provides no explicit support to the transport layer for congestion control purposes. Instead network congestion is inferred by end to end systems.
+
+TCP segment loss (via timeout, or duplicate ACK's) is taken as an indication of network congestion, and TCP decreases its window size accordingly.
+
+### Network-assisted congestion control
+
+Routers provide explicit feedback to the sender and/or receiver regarding the congestion state of the network.
+
+This feedback may be as simple as a single bit indicating congestion at a link.
+
+There are two ways to give feedback to the sender. Either a network router directly sending a `choke` packet to the sender. Or the router updates a felid in the packet going from sender to receiver to indicate congestion. When the receiver gets the packet it notifies the sender of the congestion indication.
+
+### Comparison
+
+The Internet-default versions of IP and TCP adopt an end-to-end approach towards congestion control. We’ll see, however, in Section 3.7.2 that, more recently, IP and TCP may also optionally implement network-assisted congestion control.
+
+# 3.7 TCP Congestion Control
+
+## 3.7.1 Classic TCP Congestion Control
+
+TCP sender needs to control transmission rate as a function of perceived network congestion.
+
+Questions:
+
+1. How does a TCP sender limit the rate at which it sends traffic into its connection?
+2. How does a TCP sender perceive that there is congestion on the path between itself and the destination?
+3. How should a TCP sender determine the rate at which it should send?
+
+### Limiting sender rate
+
+Sender keeps track of an additional variable, the `congestion window` (`cwnd`).
+
+Sender makes sure that amount of unacknowledged data is min of cwnd and rwnd: `LastByteSent - LastByteAcked <= min(cwnd, rwnd)`.
+
+### Detecting Congestion
+
+<img src="3-images/tcp-congestion-control.png" width="500">
+(TCP Reno)
+
+A dropped datagram, in turn, results in a loss event at the sender. Either a timeout or the receipt of three duplicate ACKs—which is taken by the sender to be an indication of congestion on the sender-to-receiver path.
+
+If on the other hand when loss events don't occur, sender will use acknowledgments to signal all is well, and will increase `cwnd` depending on how fast they come back. If acknowledgements are received at a slow rate `cwnd` will be increased slowly.
+
+### Determining the rate
+
+Goal is to utilize as much bandwidth without congesting the network.
+
+TCP’s strategy for adjusting its transmission rate is to increase its rate in response to arriving ACKs until a loss event occurs. It backs off from this rate, and later probes at this rate to see if its changed.
+
+### TCP congestion-control algorithm
+
+Three major components: (1) slow start, (2) congestion avoidance, and (3) fast recovery
+
+#### Slow start
+
+`cwnd` starts at MSS, which results in a initial sending rate of MSS/RTT which is usually 20kbps.
+
+The TCP sender then needs to find the amount of available bandwidth quickly. The value of `cwnd` then increases by 1 MSS every time a transmitted segment is first acknowledged. This process results in a `doubling` of the sending rate `every RTT`.
+
+But when should this exponential growth end?
+
+If there is a timeout `cwnd` is set to 1. It also sets a new value `ssthresh` to `cwnd/2`.
+
+When `cwnd` starts increasing again, and `cwnd >= ssthresh` then `cwnd` stops growing, and TCP transitions into `congestion avoidance` mode. TCP will increase `cwnd` more cautiously, seen later on.
+
+#### Congestion Avoidance
+
+When in the `congestion avoidance` state, TCP adopts a more conservative approach and increases the value of cwnd by just a single MSS every RTT.
+
+If three duplicate acks are found `cwnd` gets halved (less drastic because network is continuing to deliver some segments from sender to receiver), and tcp enters `fast recovery state`.
+
+#### Fast Recovery
+
+Each duplicate ack increases the `cwnd` by 1 `MSS`, until a new ACK is received or a timeout.
+Not a requirement but recommended for TCP. Newer versions of TCP (`TCP Reno`) implement this, but older versions (TCP Tahoe) don't.
+
+### TCP Congestion Control: Retrospective
+
+TCP congestion control is often referred to as an `additive-increase, multiplicative-decrease` (`AIMD`) form of congestion control. Timeouts aside it grows linearly until 3 duplicate ack's, halves itself, then grows linearly again.
+
+### TCP Cubic
+
+Another congestion avoidance algorithm, that differs to TCP Reno in the congestion avoidance phase.
+
+When loss is detected, it predicts a future point `K` where the window size will result in a loss. It quickly increases window size at the start and slows and almost plateaus at the end, only probing cautiously.
+
+When the current time exceeds `K`, the window size begins to increase again rapidly allowing it to find the new congestion level quickly (if it has changed significantly).
+
+<img src="3-images/tcp-cubic.png" width="500">
+
+It is now the default on mac and linux, and increasing in webservers.
+
+### Macroscopic Description of TCP Reno Throughput
+
+`average throughput of a connection = 0.75 / W`
+
+Where `W` is max window size before packets are dropped.
+
+## 3.7.2 Network-Assisted Explicit Congestion Notification and Delayed-based Congestion Control
+
+Recently extensions to both IP and TCP [RFC 3168] have been proposed, implemented, and deployed that allow the `network to explicitly signal congestion` to a TCP sender and receiver.
+
+### Explicit Congestion Notification (ECN)
+
+Form of network-assisted congestion control performed within the Internet.
+
+Represented in a IP datagram header `ECN`. One use is to signal the onset of congestion to the send before loss actually occurs (this is determined on per router basis, by the vendor). The second use is for the sender to let the routers know that sender and receiver are `ECN capable` of taking action to ECN indicated network congestion.
+
+Endpoints indicate that they are `ECN capable` by setting `ECN=10 or 01`, `00` is for not capable, during the handshake.
+
+If congestion is experienced the router sets `ECN=11` in datagram, when it reaches the receiver it echo's it back to the sender with `ECE=1` in segment. The sender then halves the congestion window, and sends the next segment with `CWR=1`.
+
+### Delay-based Congestion Control
+
+A second congestion-avoidance approach (differs from the likes of TCP Reno in the congestion-avoidance phase) takes a delay-based approach to also proactively detect congestion onset before packet loss occurs.
+
+`TCP Vegas`: Finds the min(RTT) (which should occur when no congestion) which leads to throughput w/o congestion = cwnd/min(RTT). If its close to this value can increase the window, if the current throughput is significantly less, then decrease window size.
+
+The BBR congestion control protocol builds on TCP Vegas. Google replaced CUBIC with Vegas in its private networks.
+
+## 3.7.3 Fairness
+
+When multiple connections share a common bottleneck, those sessions with a `smaller RTT` are able to grab the available bandwidth at that link more quickly as it becomes free (that is, open their congestion windows faster) and thus will enjoy higher throughput than those connections with larger RTTs.
+
+When only TCP connections traverse the bottleneck link, and the connections have the same RTT value, and that only a single TCP connection is associated with a host-destination pair, then it is fair.
+
+### Fairness and UDP
+
+It is possible for UDP sources to crowd out TCP traffic, as they just pump at a constant rate, and not worried about the occasional lost packet.
+
+A number of congestion-control mechanisms have been proposed to limit UDP's throughput, [Floyd 1999; Floyd 2000; Kohler 2006; RFC 4340].
+
+### Fairness and Parallel TCP Connections
+
+If an application uses multiple parallel connections, it gets a larger fraction of the bandwidth in a congested link.
+
+Multiple parallel connections are not uncommon.
+
+# 3.8 Evolution of Transport-Layer Functionality
+
+As seen there are different TCP versions for congestion control.
+
+There are versions of TCP specifically designed for use over wireless links, over high-bandwidth paths with large RTTs, for paths with packet re-ordering, and for short paths strictly within data centers. There are versions of TCP that implement different priorities among TCP connections.
+
+There are also variants of TCP that deal with packet acknowledgment and TCP session establishment and closure that differ from 3.5.6.
+
+## QUIC: Quick UDP Internet Connections
+
+A new `application-layer protocol` to improve the performance of transport-layer services for secure HTTP. Uses `UDP` as its underlying transport-layer protocol, and designed to interface with an evolved version of HTTP/2, HTTP/3 will natively incorporate QUIC.
+
+Quic Features:
+
+### Connection Oriented and Secure
+
+Requires and uses a handshake between endpoints to set a connection state (set source and est connection ID), and authentication and encryption in one go. With TSL a TCP connection is needed, before establishing a TLS connection over the TCP connection.
+
+<img src="3-images/tls-vs-quic.png" width="400">
+
+### Streams
+
+A `stream` is an abstraction for the reliable, in-order bi-directional delivery of data between two QUIC endpoints. In HTTP/3 each object in a web page will have its own stream.
+
+Multiple `streams` can be multiplexed through a single QUIC connection, and in a single QUIC segment carried over UDP. Each connection has a connection ID and each stream has its own stream ID.
+
+### Reliable, TCP-friendly congestion-controlled data transfer
+
+Provides reliable transfer for each stream `separately`.
+
+If using TCP connection and one http request goes missing, the rest have to wait until the lost bytes are retransmitted and received, (HOL blocking problem).
+
+Since QUIC provides a reliable in-order delivery on a `per-stream basis`, a lost UDP segment only impacts those streams whose data was carried in that segment; HTTP messages in other streams can continue to be received and delivered to the application. QUIC provides reliable data transfer using acknowledgment mechanisms similar to TCP’s.
+
+QUIC’s congestion control is based on TCP NewReno [RFC 6582], a slight modification to the TCP Reno protocol that we studied in Section 3.7.1.
+
+<img src="3-images/quic-rdt.png" width="500">
+
+## Other
+
+### TCP Splitting
+
+The client establishes a TCP connection to the nearby front-end, and the front-end maintains a persistent TCP connection to the data center with a very large TCP congestion window.
+
+This is to lower the RTT time from user to server, by moving most the RTT from round-trip time between client and front-end server.
