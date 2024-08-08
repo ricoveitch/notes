@@ -249,7 +249,7 @@ Alice's agent --SMTP--> Alice's mail server --SMTP--> Bob's mail server --HTTP O
 
 # 2.4 DNS—The Internet’s Directory Service
 
-There are two ways to identify a host—by a hostname and by an IP address
+There are two ways to identify a host; by a `hostname` and by an `IP address`
 
 ## 2.4.1 Services Provided by DNS
 
@@ -270,9 +270,9 @@ Steps when requesting www.someschool.edu:
 
 DNS provides a few other important services in addition to translating host- names to IP addresses:
 
-- `Host aliasing`: A host with a complicated hostname can have one or more alias names. For example, a hostname such as relay1.west-coast .enterprise.com could have, say, two aliases such as enterprise.com and www.enterprise.com. In this case, the hostname relay1.west-coast.enterprise.com is said to be a `canonical hostname`. So DNS would need to find the canonical hostname as well as the IP address.
+- `Host aliasing`: A host with a complicated hostname can have one or more alias names. For example, a hostname such as relay1.west-coast.enterprise.com could have, say, two root aliases such as enterprise.com and www.enterprise.com. In this case, the hostname relay1.west-coast.enterprise.com is said to be a `canonical hostname`.
 - `Mail server aliasing`: DNS can be invoked by a mail application to obtain the canonical hostname (e.g. relay1.west-coast.yahoo.com) for a supplied alias hostname as well as the IP address of the host
-- `Load distribution`: DNS is also used to perform load distribution among replicated servers, such as replicated Web servers. Busy sites, such as cnn.com, are replicated over multiple servers, with each server running on a different end sys- tem and each having a different IP address. If replicated, DNS returns a set of ip address, but changes up the order each time, since clients usually just select the first one.
+- `Load distribution`: DNS is also used to perform load distribution among replicated servers, such as replicated Web servers. Busy sites, such as cnn.com, are replicated over multiple servers, with each server running on a different end system and each having a different IP address. If replicated, DNS returns a set of ip address, but changes up the order each time, since clients usually just select the first one.
 
 ## 2.4.2 Overview of How DNS Works
 
@@ -341,15 +341,45 @@ A resource record is a four-tuple that contains the following fields:
 
 The meaning of Name and Value depend on Type:
 
-If `Type=A`, then Name is a hostname and Value is the IP address for the host- name. Thus, a Type A record provides the standard hostname-to-IP address map- ping
+If `Type=A`, then Name is a hostname and Value is the IP address for the hostname. Thus, a Type A record provides the standard hostname-to-IP address mapping. Used by authoritative servers.
 
-If `Type=NS`, then Name is a domain (such as foo.com) and Value is the hostname of an authoritative DNS server that knows how to obtain the IP addresses for hosts in the domain. This record is used to route DNS queries further along in the query chain.
+If `Type=NS`, then Name is a domain (such as foo.com) and Value is the hostname of an authoritative DNS server that knows how to obtain the IP addresses for hosts in the domain. This record is used by non-authoritative servers to route DNS queries further along in the query chain.
 
-If `Type=CNAME`, then Value is a canonical hostname for the alias hostname Name.
+If `Type=CNAME`, then Value is a `canonical hostname` for the alias hostname Name.
 
 If `Type=MX`, then Value is the canonical name of a mail server that has an alias hostnameName. You can query for either a mail server or a host address with a name (type A)
 
+If `Type=Alias`, then Name is the root hostname, and Value is an ip address. This is just a virtual record.
+
 If a DNS server is `authoritative` for a particular hostname, then it would send a `type A` record. A `Root` or `TLD` server would send a `NS` record `followed by a type A` record that provides the IP address of the DNS server in the `Value` field of the NS record.
+
+### Canonical hostnames and CNAME records
+
+A canonical name (`CNAME`) record is used to maps a hostname to another hostname. When you enter a subdomain foo.bar.com it will require two DNS lookups. First will get CNAME record with value=bar.com, this will cause another DNS query that will return an A record for bar.com (the root domain).
+
+When a IP address of the host changes, you only need to update the A record.
+
+CNAME records don't just need to apply to subdomains, but can redirect to a different website. CDNs often use CNAME records to redirect the host through to the CDN.
+
+### Alias Records
+
+Is a feature of DNS services like Route 53.
+
+Commonly used for the root domain (apex domain) and to point to cloud resources (e.g., load balancers, S3 buckets).
+
+Alias records are resolved at the DNS server level, and the response to the DNS query is an IP address, not another domain name.
+
+```
+example.com  Alias  example-load-balancer-123456.us-east-1.elb.amazonaws.com
+```
+
+### Difference between CNAME and Alias record
+
+CNAME records are generally used for subdomains, while Alias records are useful for root domains and cloud resource integration.
+
+Alias records can coexist with other records for the same domain name, unlike CNAME records.
+
+CNAME records can't be used on root domain (example.com).
 
 ### DNS Messages
 

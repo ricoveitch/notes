@@ -1,10 +1,8 @@
 # ScyllaDB
 
-- Session and yami don't require phone number
-
 ## Node
 
-Computer running scylladb. Each node consists of `shards`. Each node is assinged a range of hash tokens which determine what rows it stores.
+Computer running scylladb. Each node consists of `shards`. Each node is assigned a range of hash tokens which determine what rows it stores.
 
 ## Cluster
 
@@ -43,7 +41,7 @@ Within the ScyllaDB cluster, all internode communication is peer-to-peer, so the
 
 ## Keyspace
 
-A Keyspace is a top-level container that stores tables with attributes that define how data is replicated on nodes. It defines a number of options that apply to all the tables it contains, most prominently of which is the replication strategy used by the Keyspace.  It is generally recommended to use one Keyspace per application, and thus a cluster may define only one Keyspace.
+A Keyspace is a top-level container that stores tables with attributes that define how data is replicated on nodes. It defines a number of options that apply to all the tables it contains, most prominently of which is the replication strategy used by the Keyspace. It is generally recommended to use one Keyspace per application, and thus a cluster may define only one Keyspace.
 
 ## Partition key
 
@@ -62,6 +60,16 @@ Defining clustering key: `Create table t (...PRIMARY KEY ((app_name,env), hostna
 
 You can change the ordering of the clustering key (default is asc) by `CREATE TABLE T (...) WITH CLUSTERING ORDER BY (col desc)`.
 
+## Discord
+
+Uses primary key of (message_id), and a partition key of (channel_id, bucket).
+
+Using WITH CLUSTERING ORDER BY (message_id DESC).
+
+The clustering key was initially (channel_id), but Cassandra can only handle 2GB partitions. Large partitions put a lot of GC pressure on Cassandra during compaction, cluster expansion, and more. Having a large partition also means the data in it cannot be distributed around the cluster.
+
+Messages where then placed into buckets of about 10 days.
+
 ## Materialized View
 
 If you want to query something using where of a column, and you don't specify the partition key, will need to scan all partitions to find it. Can create a materialized view to take a transformation of the data. [38:00](https://www.youtube.com/watch?v=bTEfRmdBq7I). You are keeping the data twice on disk.
@@ -78,4 +86,6 @@ Won't work since data is stored on different nodes and shards. There are 3rd par
 
 ## Sharding
 
-Each ScyllaDB node consists of several independent shards, which contain their share of the node’s total data. ScyllaDB creates a one shard per core (technically, one shard per hyperthread, meaning some physical cores may have two or more virtual cores). Each shard operates on a [shared-nothing architecture](https://en.wikipedia.org/wiki/Shared-nothing_architecture) basis. This means each shard is assigned its RAM and its storage, manages its schedulers for the CPU and I/O, performs its compactions (more about compaction later on), and maintains its multi-queue network connection. Each shard runs as a single thread, and communicates asynchronously with its peers, without locking.
+Each ScyllaDB node consists of several independent shards, which contain their share of the node’s total data. ScyllaDB creates one shard per core (technically, one shard per hyperthread, meaning some physical cores may have two or more virtual cores).
+
+Each shard operates on a [shared-nothing architecture](https://en.wikipedia.org/wiki/Shared-nothing_architecture) basis. This means each shard is assigned its RAM and its storage, manages its schedulers for the CPU and I/O, and maintains its multi-queue network connection. Each shard runs as a single thread, and communicates asynchronously with its peers, without locking.
